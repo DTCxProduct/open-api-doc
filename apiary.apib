@@ -106,92 +106,7 @@ signature = base64.b64encode(hash)
 - 新增建立連絡人、更新連絡人API
 - 新增建立LINE用戶、更新LINE用戶API
 
-      
-
-## 連絡人 [/openapi/v1/contacts]
-
-### 更新個人化參數 [POST]
-
-+ `personalInfo` 需使用透過 *建立個人化參數* API 所新增的參數。
-+ `personalInfo` 欄位值不能超過50字元。
-+ 取得 `job_id` (工作狀態 ID) 後可透過 *取得連絡人更新狀態* API查詢是否更新完成。 
-+ `sfId`、`externalCid`和`uuid`擇一必填。 
-+ `request payload` 最大為 30MB。
-
-+ Request (application/json)
-    + Headers
-            Authorization: Bearer {Access Token}
-            
-    + Attributes
-            + externalCid: (string) - 連絡人外部識別碼 ID
-            + sfId:  (string) - Salesforce連絡人識別碼(18碼)
-            + uuid:  (string) - C360+連絡人識別碼
-            + personalInfo: (object) - 個人化參數
-        
-    + Body
-        [
-            { 
-                "sfId": "00300000123456789",
-                "personalInfo": {
-                    "point": "50",
-                    "age": "27",
-                    "position": "工程師"
-                },
-            },
-            {
-                "externalCid": "0002", 
-                "personalInfo": {
-                    "point": "20",
-                    "age": "28",
-                    "position": "專案經理"
-                },
-            },
-            {
-                "uuid": "04817568-9a26-4f65-9410-23b4b86468b4", 
-                "personalInfo": {
-                    "point": "20",
-                    "age": "28",
-                    "position": "專案經理"
-                },
-            }
-        ]
-
-
-### 取得連絡人更新狀態 [GET /openapi/v1/jobs/{id}]
-
-+ Parameters
-    + id: (string) - 工作 ID
-
-+ Request
-    + Headers
-        Authorization: Bearer {Access Token}
-
-+ Response 200 (application/json)
-    + Attributes  
-        + job: (object)
-           + uuid: (string) - 工作 ID
-           + status: (string) - 狀態(Processing、Completed、Failed)
-           + createdAt: (string) - 建立時間
-           + updatedAt: (string) - 最後更新時間
-    + Body
-        {  
-            "uuid": "e0ad12ea-3a51-49f1-b1e6-8ed181e93823",
-            "status": "Completed",
-            "createdAt": "2024-01-15 18:16:32.331 +0800 CST",
-            "updatedAt": "2024-01-15 18:16:32.423 +0800 CST" 
-        }
-
-+ Response 200 (application/json)
-
-    + Attributes 
-        + id: (string) - 工作狀態 ID
-    + Body
-
-        {
-            "id": 1
-        }
-
-## 連絡人 v2 [/openapi/v2/contacts]
+## 連絡人 [/openapi/v2/contacts]
 
 ### 欄位說明
 
@@ -311,7 +226,7 @@ signature = base64.b64encode(hash)
             { "msg": "contact not found" }
 
 ### 更新 [PUT]
-用途：更新 `isChatting`、`isBinding` 等欄位。
+    外部系統提供欲更新 LINE 用戶關聯之連絡人 sf cid 或 external cid，系統將查詢此連絡人是否存在，存在則關聯之，不存在則返回錯誤。
 
 + Headers
     + Content-Type: application/json
@@ -327,6 +242,7 @@ signature = base64.b64encode(hash)
             { "msg": "contact not found" }
 
 ### 綁定 [PATCH]
+外部系統提供 LINE 用戶欲綁定的連絡人 sf cid 或 external cid，系統將查詢此連絡人是否存在，存在則關聯之，並合併原本的連絡人；若不存在將 sf cid 或 external cid 壓在LINE 用戶關聯的連絡人上。
 + Request (application/json)
     + Headers
         Authorization: Bearer {Access Token}
@@ -404,6 +320,88 @@ signature = base64.b64encode(hash)
 
         { 
         }
+        
+### 更新個人化參數 [POST /openapi/v1/contacts]
+
++ `personalInfo` 需使用透過 *建立個人化參數* API 所新增的參數。
++ `personalInfo` 欄位值不能超過50字元。
++ 取得 `job_id` (工作狀態 ID) 後可透過 *取得連絡人更新狀態* API查詢是否更新完成。 
++ `sfId`、`externalCid`和`uuid`擇一必填。 
++ `request payload` 最大為 30MB。
+
++ Request (application/json)
+    + Headers
+            Authorization: Bearer {Access Token}
+            
+    + Attributes
+            + externalCid: (string) - 連絡人外部識別碼 ID
+            + sfId:  (string) - Salesforce連絡人識別碼(18碼)
+            + uuid:  (string) - C360+連絡人識別碼
+            + personalInfo: (object) - 個人化參數
+        
+    + Body
+        [
+            { 
+                "sfId": "00300000123456789",
+                "personalInfo": {
+                    "point": "50",
+                    "age": "27",
+                    "position": "工程師"
+                },
+            },
+            {
+                "externalCid": "0002", 
+                "personalInfo": {
+                    "point": "20",
+                    "age": "28",
+                    "position": "專案經理"
+                },
+            },
+            {
+                "uuid": "04817568-9a26-4f65-9410-23b4b86468b4", 
+                "personalInfo": {
+                    "point": "20",
+                    "age": "28",
+                    "position": "專案經理"
+                },
+            }
+        ]
+
+
+### 取得個人化參數更新狀態 [GET /openapi/v1/jobs/{id}]
+
++ Parameters
+    + id: (string) - 工作 ID
+
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+
++ Response 200 (application/json)
+    + Attributes  
+        + job: (object)
+           + uuid: (string) - 工作 ID
+           + status: (string) - 狀態(Processing、Completed、Failed)
+           + createdAt: (string) - 建立時間
+           + updatedAt: (string) - 最後更新時間
+    + Body
+        {  
+            "uuid": "e0ad12ea-3a51-49f1-b1e6-8ed181e93823",
+            "status": "Completed",
+            "createdAt": "2024-01-15 18:16:32.331 +0800 CST",
+            "updatedAt": "2024-01-15 18:16:32.423 +0800 CST" 
+        }
+
++ Response 200 (application/json)
+
+    + Attributes 
+        + id: (string) - 工作狀態 ID
+    + Body
+
+        {
+            "id": 1
+        }
+
         
 ## 分眾 [/openapi/v1/segments]
 
