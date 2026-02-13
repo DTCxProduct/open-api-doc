@@ -1,0 +1,881 @@
+FORMAT: 1A
+
+
+# C360+ OpenAPI 
+
+無論您是希望使用服務達到自動化工作流程、增強數據分析、提供用戶個性化體驗，C360+ 的 API 都能為您提供靈活、高效的解決方案。
+
+## 說明
+------
+
+>### HOST
+>- 正式環境: `https://api.c360plus.com`
+
+>### 請求方式
+>將 Access token 放入 Header 中的 Authorization 參數，Access Token 由 C360+ 團隊提供。
+>| Request header | Description |
+>| :-- | :-- |
+>|Authorization| Bearer `{Access token}` |
+
+>### 狀態代碼
+>|代碼|說明|
+>| :-- | :-- |
+>| 200 | `OK` - 請求成功 |
+>| 400 | `Bad Request` - 失敗，必要的參數內容遺失或不正確 |
+>| 401 | `Unauthorized` - 對於操作的資源缺乏權限或授權失敗 |
+>| 403 | `Forbidden` - 失敗，禁止操作 |
+>| 404 | `Not Found` - 失敗，資源不存在 |
+>| 429 | `Too Many Requests` - 請求數量過多，可能因為系統正處於高峰流量時段。建議幾秒後重試，並且拉長每個請求之間的發送間隔時間 |
+
+<!--## 流量限制-->
+<!---------->
+<!--C360+ 對每個 **Access Token**（以及可能的來源 IP）實施速率限制，超限時回 **429 Too Many Requests**。-->
+<!--所有回應（含成功）皆會帶回剩餘額度相關標頭，便於客戶端自我節流。-->
+
+<!--各API限制列於下表：-->
+
+<!--| API | Method | 流量限制 | -->
+<!--|---|---|---:|-->
+<!--| /openapi/v2/contacts | POST |  | -->
+<!--| /openapi/v2/contacts | PUT |  |-->
+<!--| /openapi/v1/lineusers | POST | 10/s |-->
+<!--| /openapi/v1/lineusers | PUT | 10/s | -->
+
+<!--### 回應標頭-->
+<!--- `X-RateLimit-Limit`: 當前允許的最大請求數（整數）-->
+<!--- `X-RateLimit-Remaining`: 當前剩餘可用請求數（整數）-->
+<!--- `X-RateLimit-Reset`: 重置時間（UNIX 秒）-->
+<!--- 如遇超限，另回 `Retry-After`（秒），指示最早可重試時間-->
+
+<!--### 429 Too Many Requests-->
+<!--> **429 僅回狀態碼與標頭，不回 body**。-->
+
+<!--+ Response 429-->
+<!--    + Headers 
+        X-RateLimit-Limit: 600
+        X-RateLimit-Remaining: 0
+        X-RateLimit-Reset: 1724803200
+        Retry-After: 25-->
+
+## Webhook
+------
+每當特定事件發生時，C360+ 平台都會向您發送帶有 Webhook 事件物件的請求，以達成即時同步雙方資訊。
+
+### Webhook Headers
++ `C360plus-Signature` 驗證該Webhook事件是否來自C360+平台
+
+###注意事項
++ 您的服務可能會從 C360+ 平台以外的來源接收 HTTP POST 請求，此類請求可能是惡意的。請務必在處理 Webhook 事件物件之前驗證簽章。
+
++ 我們建議您以非同步處理 Webhook 事件。這是為了防止後續請求等待當前請求被處理。
+
++ 若未提供C360+團隊您的webhook URL，所有Webhook功能皆無法正常執行
+
+###驗證方式
+以C360+團隊提供的 Event Key作為密鑰（Secret key），使用HMAC-SHA256演算法取得HTTP請求本體（HTTP request body）的文摘值（Digest value）。
+
+將上述文摘值以Base64編碼，比對編碼後的內容與http Header中的`C360plus-Signature`項目內容值是否相同；
+若是相同，表示該事件訊息是來自C360+，否則拒絕處理該事件訊息。
+
+以下是驗證簽名的 Python 範例：
+```
+import base64
+import hashlib
+import hmac
+
+secret_key = '...' # C360+ event key
+body = '...' # Request body string
+hash = hmac.new(channel_secret.encode('utf-8'),
+    body.encode('utf-8'), hashlib.sha256).digest()
+signature = base64.b64encode(hash)
+# Compare x-line-signature request header and the signature
+```
+
+## 更新紀錄
+------
+### v1.0.0 / 2024-02-22
+- 初版
+### v1.1.0 / 2024-08-12
+- 更新連絡人新增sfId參數
+- LINE用戶綁定改名為更新LINE用戶，並在request body中新增sfCid欄位
+### v1.2.0 / 2024-10-22
+- 新增訊息推播
+### v1.3.0 / 2024-12-18
+- 新增Webhook
+### v1.4.0 / 2025-12-26
+- 新增建立連絡人、更新連絡人API
+- 新增建立LINE用戶、更新LINE用戶API
+
+      
+
+## 連絡人 [/openapi/v1/contacts]
+
+### 更新個人化參數 [POST]
+
++ `personalInfo` 需使用透過 *建立個人化參數* API 所新增的參數。
++ `personalInfo` 欄位值不能超過50字元。
++ 取得 `job_id` (工作狀態 ID) 後可透過 *取得連絡人更新狀態* API查詢是否更新完成。 
++ `sfId`、`externalCid`和`uuid`擇一必填。 
++ `request payload` 最大為 30MB。
+
++ Request (application/json)
+    + Headers
+            Authorization: Bearer {Access Token}
+            
+    + Attributes
+            + externalCid: (string) - 連絡人外部識別碼 ID
+            + sfId:  (string) - Salesforce連絡人識別碼(18碼)
+            + uuid:  (string) - C360+連絡人識別碼
+            + personalInfo: (object) - 個人化參數
+        
+    + Body
+        [
+            { 
+                "sfId": "00300000123456789",
+                "personalInfo": {
+                    "point": "50",
+                    "age": "27",
+                    "position": "工程師"
+                },
+            },
+            {
+                "externalCid": "0002", 
+                "personalInfo": {
+                    "point": "20",
+                    "age": "28",
+                    "position": "專案經理"
+                },
+            },
+            {
+                "uuid": "04817568-9a26-4f65-9410-23b4b86468b4", 
+                "personalInfo": {
+                    "point": "20",
+                    "age": "28",
+                    "position": "專案經理"
+                },
+            }
+        ]
+
+
+### 取得連絡人更新狀態 [GET /openapi/v1/jobs/{id}]
+
++ Parameters
+    + id: (string) - 工作 ID
+
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+
++ Response 200 (application/json)
+    + Attributes  
+        + job: (object)
+           + uuid: (string) - 工作 ID
+           + status: (string) - 狀態(Processing、Completed、Failed)
+           + createdAt: (string) - 建立時間
+           + updatedAt: (string) - 最後更新時間
+    + Body
+        {  
+            "uuid": "e0ad12ea-3a51-49f1-b1e6-8ed181e93823",
+            "status": "Completed",
+            "createdAt": "2024-01-15 18:16:32.331 +0800 CST",
+            "updatedAt": "2024-01-15 18:16:32.423 +0800 CST" 
+        }
+
++ Response 200 (application/json)
+
+    + Attributes 
+        + id: (string) - 工作狀態 ID
+    + Body
+
+        {
+            "id": 1
+        }
+
+## 連絡人 v2 [/openapi/v2/contacts]
+
+### 欄位說明
+
+| 欄位 | 型別  | 長度限制 | 說明 |
+| --- | ---  | --- | --- |
+| name | string |  100 | 姓名 |
+| sfid | string  |  固定18 | Salesforce識別碼 |
+| externalCid | string |  60 | 外部系統客戶 ID |
+| uuid | string | 36 | c360plus識別碼 |
+| birthday | string | 固定 10 | 生日 |
+| gender | string |  1 | 性別 | 
+| phone | string |  20 | 連絡電話 |
+| countryCode | string | 4 | 行動電話國碼 |
+| mobilePhone | string |  20 | 行動電話 |
+| email | string |  255 | Email |
+| country | string | 50 | 國家 |
+| zipCode | string | 6 | 郵遞區號 |
+| city | string |  50 | 城市/縣市 |
+| district | string |  50 | 行政區 |
+| address | string |  200 | 詳細地址 |
+※必填欄位標示在 Request ATTRIBUTES 中
+
+### 建立 [POST]
+
+- 即時新增
+- 以 `sfid` 或 `externalCid`偵測是否已存在資料，若存在則寫入失敗；一批中若任一筆錯誤則整批失敗
+- 單次請求最多建立500筆連絡人
+
++ Request   (application/json)
+    + Attributes (BatchContactsCreateRequest)
+ 
++ Response 201
+    + Body
+
+            {
+                "datas": [
+                    {
+                        "key": "sf_id",
+                        "value": "0031x0000GAAAAB001",
+                        "uuid": "e5245e4f-0d8e-40b2-a404-b15d12ec143a"
+                    }
+                ]
+            }
+    
++ Response 400 (application/json)
+    + Body
+
+            { "msg": "data already exists", "details": [{"index": "sf_id or external_cid"}] }
+    
++ Response 400 (application/json)
+    + Body
+
+            { "msg": "invalid data", "details": [{"index": "sf_id or external_cid","property":"gender"}] }
+
+### 更新 [PUT]
+
+- 以 `sfid` 、 `externalCid` 或 `uuid` 為鍵值更新資料（若都有傳值則以 `sfid` 優先）
+- 若沒比對到即為失敗，一批中若任一筆錯誤則整批失敗
+
++ Headers
+    + Content-Type: application/json
+
++ Request (application/json)
+    + Attributes (BatchContactsUpdateRequest)
+
++ Response 200
+
++ Response 400  (application/json)
+    + Body
+
+            { "msg": "data not found", "details": [{"index": "sf_id or external_cid"}] }
+
+## LINE用戶 [/openapi/v1/lineusers]
+
+### 欄位說明
+
+| 欄位 | 型別 | 長度限制 | 說明 |
+| --- | --- | --- | --- |
+| lineUid | string |  固定32 | LINE UID |
+| sfCid | string |  固定18 | Salesforce連絡人識別碼，需關聯既有連絡人時帶入 |
+| externalCid | string |  64 | 需關聯既有連絡人時帶入 |
+| nickname | string |  50 | 好友暱稱；未填時顯示「未知」 |  
+| authMobile | string |  20 | LINE授權行動電話 |
+| authEmail | string |  254 | LINE授權 Email | 
+| isChatting | boolean | - | 是否開啟一對一聊天模式(ture時不會觸發C360+自動回應) | 
+| isBinding | boolean |  - | 是否綁定 |
+| name | string | 100 | 姓名 |
+| birthday | string | 固定 10 | 生日 |
+| gender | string |  1 | 性別 | 
+| phone | string |  20 | 連絡電話 |
+| countryCode | string | 4 | 行動電話國碼 |
+| mobilePhone | string |  20 | 行動電話 |
+| email | string |  255 | Email |
+| country | string | 50 | 國家 |
+| zipCode | string | 6 | 郵遞區號 |
+| city | string |  50 | 城市/縣市 |
+| district | string |  50 | 行政區 |
+| address | string |  200 | 詳細地址 | 
+※必填欄位標示在 Request ATTRIBUTES 中
+
+### 建立 [POST]
+- 若無sf cid 和 external cid，會在C360+內建立一個「空殼連絡人」並關聯之
+- 若有sf cid 或 external cid，先查連絡人是否存在，存在則關聯之，不存在則返回錯誤
+- 未填暱稱時顯示「未知」。
+
++ Headers
+    + Content-Type: application/json
+
++ Request (application/json)
+    + Attributes (LineUser)
+
++ Response 201 
+
++ Response 400 (application/json)
+    + Body
+
+            { "msg": "contact not found" }
+
+### 更新 [PUT]
+用途：更新 `isChatting`、`isBinding` 等欄位。
+
++ Headers
+    + Content-Type: application/json
+
++ Request (application/json)
+    + Attributes (LineUser)
+
++ Response 200  
+
++ Response 400 (application/json)
+    + Body
+
+            { "msg": "contact not found" }
+
+### 綁定 [PATCH]
++ Request (application/json)
+    + Headers
+        Authorization: Bearer {Access Token}
+        
+    + Attributes
+        + isBind: (boolean) - 是否綁定
+        + email: (string) - 電子郵件
+        + phone: (string) - 行動電話
+        + officialName: (string) - 姓名
+        + gender: (string) - 性別 (男、女、其他)
+        + lineId: (string, required) - LINE UID
+        + externalCid: (string) - 連絡人識別 ID
+        + sfCid: (string) - Salesforce連絡人識別碼(18碼)
+        + isChatting: (boolean) - 是否開啟一對一聊天模式(ture時不會觸發C360+自動回應)
+    
+    + Body
+
+            {
+                "isBind": true,
+                "email": "test@c360plus.com",
+                "phone": "0912345678",
+                "officialName": "",
+                "gender": "男",
+                "lineId": "Uda8f6b1b8c384cd6eb385eaf03e1bb1a",
+                "externalCid": "C123",
+                "sfCid": "00300000123456789",
+                "isChatting": true
+            }
+
++ Response 200 (application/json)
+
+    + Attributes 
+        + msg: (string) - 錯誤原因
+    + Body
+
+        { 
+        }
+         
+
+## 個人化參數 [/openapi/v1/personalization/contacts]
+
+### 建立個人化參數 [POST]
+
++ 個人化參數數量上限20個
+
++ Request (application/json)
+    + Headers
+        Authorization: Bearer {Access Token}
+        
+    + Attributes
+        + apiName: (string, required) - API 名稱
+        + name: (string, required) - 名稱
+    
+    + Body
+        [
+            {
+                "apiName": "position",
+                "name": "職位"
+            },
+            {
+                "apiName": "point",
+                "name": "點數"
+            },
+            {
+                "apiName": "age",
+                "name": "年齡"
+            }
+        ]
+
++ Response 200 (application/json)
+
+    + Attributes 
+        
+    + Body
+
+        { 
+        }
+        
+## 分眾 [/openapi/v1/segments]
+
+### 欄位說明
+
+| 欄位 | 型別 | 長度限制 | 說明 |
+| --- | --- | --- | --- |
+| uuid | string | 36 | c360plus識別碼 |
+| name | string | 80 | 名稱 |
+| count | string | - | 人數 |
+| type | string | 10 | 類型 |
+| status | string | 20 | 狀態(processing、ready) |
+| createdAt | string | - | 建立時間 |
+| updatedAt | string | - | 最後更新時間 |
+
+### 取得分眾列表 [GET /openapi/v1/segments]
+
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+
++ Response 200 (application/json)
+    + Attributes  
+        + segments: (array, optional)
+            + (object)
+               + count: (string, optional) - 人數
+               + uuid:  (string, optional) - c360plus識別碼
+               + name:  (string, optional) - 名稱
+               + status:  (string, optional) - 狀態
+               + createdAt:  (string, optional) - 建立時間
+               + updatedAt:  (string, optional) - 最後更新時間
+    + Body
+        { 
+    "segments": [
+        {
+            "count": "4",
+            "uuid": "706cb3d4-8e96-c9ba-asdf-ef39620e3a0b",
+            "name": "分眾一",
+            "status": "ready",
+            "createdAt": "2008-02-21T22:49:04Z",
+            "updatedAt": "2024-01-23T02:57:29.517Z"
+        },
+        {
+            "count": "1",
+            "uuid": "2d3c0079-1aa8-4b51-sd85-74aadc64acbc",
+            "name": "分眾二",
+            "status": "ready",
+            "createdAt": "2024-01-23T02:42:54.385Z",
+            "updatedAt": "2024-01-23T02:47:26.426Z"
+        },
+        {
+            "count": "2",
+            "uuid": "93617ca1-62sa-440a-tg96-80b21a40f2fc",
+            "name": "分眾三",
+            "status": "ready",
+            "createdAt": "2024-01-23T06:40:05.118Z",
+            "updatedAt": "2024-01-23T06:41:46.126Z"
+        }
+    ]
+}
+
+### 取得分眾資訊 [GET /openapi/v1/segments/{uuid}]
++ Parameters
+    + uuid: (string) - c360plus識別碼
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+
++ Response 200 (application/json)
+    + Attributes 
+        + count: (string, optional) - 人數
+        + uuid:  (string, optional) - c360plus識別碼
+        + name:  (string, optional) - 名稱
+        + type: (string, optional) - 類型
+        + status:  (string, optional) - 狀態(processing、ready)
+        + createdAt:  (string, optional) - 建立時間
+        + updatedAt:  (string, optional) - 最後更新時間
+    + Body
+        {
+            "count": "4",
+            "uuid": "706b3d4-8e96-c9ba-asdf-ef39620e3a0b",
+            "name": "分眾一",
+            "status": "ready",
+            "type": "file",
+            "createdAt": "2008-02-21T22:49:04Z",
+            "updatedAt": "2024-01-23T02:57:29.517Z"
+        }
+
+### 取得分眾名單 [GET /openapi/v1/segment/{uuid}/audiences]
+
++ Parameters
+    + uuid: (string) - c360plus識別碼
+        
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+    
+    
+
++ Response 200 (text/csv)
+    + Body
+        LINE UID
+        U461537ab3c0025eb5e5bb7a5fbe75340
+        U69497313647afb3468c91d14fdff5a1b
+        U8873b68f0beb6fad988a96741149a818
+        Ubb324563ea0f6f647393fd20f21702bc
+
+### 更新分眾名單 [POST /openapi/v1/segment/audiences]
+
++ 檔案須為 csv 檔，最大為 30MB。
++ 檔案需以 LINE UID 開頭。
+
++ Request (multipart/form-data)
+    + Headers
+        Authorization: Bearer {Access Token}
+        
+    + Attributes
+        + uuid: (string, required) - c360plus識別碼
+        + operation: (string, required) - 更新方式(overwrite、update)
+        + file: `csv` (string, required) - 指定文件必须是CSV格式
+        
+
++ Response 200 (application/json)
+
+    + Attributes
+        + status: (string, required) - 狀態
+        + uuid: (string, required) - 外部識別碼
+        
+    + Body
+
+            {
+                "status": "processing",
+                "uuid": "po6cb3d4-8ea6-c9ba-40e4-s959620e3a0b"
+            }
+            
+### 建立分眾 [POST]
+
++ 建立分眾後獲取 `uuid`需自行儲存，以此唯一值對分眾執行更新、刪除等操作。
++ Request (application/json)
+    + Headers
+        Authorization: Bearer {Access Token}
+        
+    + Attributes
+        + name: (string, required) - 名稱
+    
+    + Body
+        {"name": "分眾"}
+
++ Response 200 (application/json)
+
+    + Attributes 
+        + uuid: (string) - c360plus識別碼
+        
+    + Body
+
+        { 
+            "uuid": "fs6d5692-1a80-44fb-9122-56c568ee5pc1"
+        }
+        
+### 刪除分眾 [DELETE /openapi/v1/segments/{uuid}]
++ Parameters
+    + uuid: (string) - c360plus識別碼
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+        
+
++ Response 200 (application/json)
+
+    + Attributes 
+        
+    + Body
+
+        { 
+        }
+          
+
+## 訊息 [/openapi/v1/direct-message] 
+
+### 訊息推播 [POST]
+
++ 寄發訊息後獲取 `id`需自行儲存，以此唯一值對寄發訊息執行狀態查詢等操作。
++ `request payload` 最大為 30MB。
++ 單次請求最多推播100位連絡人
+
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+        
+    + Attributes
+        + planId:  (string, required) - 訊息計畫ID
+        + data: (array, required)
+            + (object)
+                + lineId: (string, required) - 發送對象
+                + sfKey: (string) - Salesforce溝通歷程識別碼(18碼)
+                + params: (object, required) - 自定義API參數
+                  
+    + Body
+        {
+            "planId": "00000438",
+            "data": [
+                {
+                    "lineId": "U461537ab3c0025eb5e5bb7a5fbe75340",
+                    "sfKey" : "a0FRA00000xxxxxxxx"
+                    "params": {
+                        "name": "sandy",
+                        "age":"18",
+                    },
+                },
+                {
+                    "lineId": "U69497313647afb3468c91d14fdff5a1b",
+                    "sfKey" : "a0FRA00000xxxxxxxy"
+                    "params": {
+                        "name": "tom",
+                        "age": "20",
+                    },
+                },
+            ]
+        }
+        
++ Response 200 (application/json)
+    + Attributes  
+        + id: (string) - 寄發訊息ID 
+        + status: (string) - 狀態(InProgress、Completed)
+    + Body
+        { 
+            "id": "1",
+            "status": "InProgress",
+        }
+        
+### 訊息狀態 [GET /openapi/v1/direct-message/{id}]
+
++ Parameters
+      + id: `1` (number, required) - 寄發訊息ID
+      
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+
+        
++ Response 200 (application/json)
+    + Attributes  
+        + id: (number) - 寄發訊息ID 
+        + msgPlan: (string) - 訊息計畫ID
+        + total: (number) - 寄發總人數
+        + fail: (number) - 寄發失敗人數
+        + status: (string) - 狀態(Fail、InProgress、Completed)
+        + failInfo: (array) - 失敗原因
+            + (object)
+            + to (string) - 寄發對象
+            + detail (string) - 失敗原因
+        + success: `lineId` (array) - 成功寄發對象
+        + createdAt: (string) - 建立時間
+        
+    + Body
+        { 
+            "id": 1,
+            "msgPlan": "00000448",
+            "total": 1,
+            "fail": 0,
+            "status": "Complete",
+            "failInfo": [],
+            "success": [
+              "U8873b68f0beb6fad988a96741149a818"
+            ],
+            "createdAt": "2024-10-14T02:36:32.422Z"
+        }
+
+### 訊息列表 [GET /openapi/v1/direct-message/{?locator}]
++ 每次最多回傳100筆訊息計畫
++ 若有回傳 `locator`，代表還有下一頁，帶入request的`locator`參數中便可獲得下一頁
++ Parameters
+      + locator: `FICtdSQME4yLg/tPvVXPX/wypGybttcCq6EwHiNhaa3SYvsRVfZN04xcm51cc+lO` (string, optional) - 顯示下一分頁之識別碼，紀錄於response的locator參數
+      
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+        
++ Response 200 (application/json)
+
+    + Attributes  
+        + data: (array)
+            + (object)
+                + id: (string) - 訊息計畫ID
+                + name: (string) - 名稱
+                + params: (array) - 自定義API參數(string)
+        + locator: (string) - 下一分頁之識別碼
+        
+    + Body
+        {
+            "data": [
+                {
+                    "id": "0000449",
+                    "name": "today followers",
+                    "params": ["age","name","position"]
+                },
+            ],
+            "locator": "FICtdSQME4yLg/tPvVXPX/wypGybttcCq6EwHiNhaa3SYvsRVfZN04xcm51cc+lO"
+        }
+        
+
+## Webhook [/webhook-event]
+
+您可以使用 Webhook 來取得有關用戶中特定事件的通知，並進行進一步處理，而不必定期進行 API 輪詢以檢查其狀態與更新。
+
+| 事件類型 | 觸發時機 |
+| :- | :- |
+| 新好友加入 | 當用戶將您的 LINE 官方帳號新增為好友(此前從未有好友關係) |
+| 用戶綁定   | 當用戶透過C360+平台綁定您的 LINE 官方帳號成功且使用手機號碼未找到重複連絡人 |
+| 用戶合併   | 當用戶透過C360+平台綁定您的 LINE 官方帳號成功且使用手機號碼找到重複連絡人 |
+
+> ##Headers
+| 欄位 | 內容 |
+| :- | :- |
+| Content-Type | `application/json; charset=utf-8` |
+| C360plus-Signature | 用以確認請求是否由 C360+ 平台發送 |
+
+###注意事項
++ 以下所有 webhook endpoint 均不存在於 C360+ OpenAPI (僅為示例)，請勿將此用做測試或發送請求
+
+### 連絡人事件
+
+#### 新加入好友 [POST /new-friends/client/c360plus/webhook]
+        
++ Response 200 (application/json)
+    + Attributes  
+        + type: (string) - 事件類型
+        + isBound: (boolean) - 是否綁定 
+        + channelId: (string) - LINE帳號ID
+        + lineUid: (string) - LINE用戶ID
+        + uuid: (string) - C360+ 連絡人識別碼
+        
+    + Body
+        {
+            "type": "create",
+            "isBound": false,
+            "channelId": "2077358496",
+            "lineUid": "Uas5211ic3w3f5esc124w4s23a654sdw5",
+            "uuid": "337a220b-f988-4c81-a9f9-329f6c06e331"
+        }
+        
+        
+#### 用戶綁定 [POST /new-bind/client/c360plus/webhook]
+        
++ Response 200 (application/json)
+    + Attributes  
+        + type: (string) - 事件類型
+        + isBound: (boolean) - 是否綁定 
+        + channelId: (string) - LINE帳號ID
+        + lineUid: (string) - LINE用戶ID
+        + uuid: (string) - C360+ 連絡人識別碼
+        + phone: (string) - 電話號碼
+        + email: (string) - 電子郵件 
+        + gender: (string) - 性別
+        + birthday: (string) - 生日
+        + officialName: (string) - 綁定姓名
+        + addressCity: (string) - 居住城市 
+        + addressDistrict: (string) - 居住區域
+        + addressStreet: (string) - 詳細地址
+    + Body
+        {
+            "type": "bind", 
+            "isBound": true,
+            "channelId": "2077358496",
+            "lineUid": "Uas5211ic3w3f5esc124w4s23a654sdw5",
+            "uuid": "337a220b-f988-4c81-a9f9-329f6c06e331",
+            "phone"  :  "0912345678",
+            "email"："test123@gmail.com",
+            "gender"："其他",
+            "birthday"："2024-12-18",
+            "officialName"："test123",
+            "addressCity"："台北市",
+            "addressDistrict"："松山區",
+            "addressStreet"："南京東路1段247號"
+        }
+        
+#### 用戶合併 [POST /merge/client/c360plus/webhook]
+        
++ Response 200 (application/json)
+    + Attributes  
+        + type: (string) - 事件類型
+        + isBound: (boolean) - 是否綁定 
+        + channelId: (string) - LINE帳號ID
+        + lineUid: (string) - LINE用戶ID
+        + uuid: (string) - C360+ 連絡人識別碼
+        + phone: (string) - 電話號碼
+        + email: (string) - 電子郵件 
+        + gender: (string) - 性別
+        + birthday: (string) - 生日
+        + officialName: (string) - 綁定姓名
+        + addressCity: (string) - 居住城市 
+        + addressDistrict: (string) - 居住區域
+        + addressStreet: (string) - 詳細地址
+        + recordToMergeUuids: (array) - 被合併的C360+連絡人Uuid
+            + uuid (string) 
+    + Body
+        {
+            "type": "merge", 
+            "isBound": true,
+            "channelId": "2077358496",
+            "lineUid": "Uas5211ic3w3f5esc124w4s23a654sdw5",
+            "uuid": "337a220b-f988-4c81-a9f9-329f6c06e331",
+            "phone"  :  "0912345678",
+            "email"："test123@gmail.com",
+            "gender"："其他",
+            "birthday"："2024-12-18",
+            "officialName"："test123",
+            "addressCity"："台北市",
+            "addressDistrict"："松山區",
+            "addressStreet"："南京東路1段247號",
+            "recordToMergeUuids"：["548868c5-bbe1-1e8f-862f-47160a400019","0fd5b973-4637-40c1-893a-98bq2e0897e8"]
+        }
+
+# Data Structures
+
+## Contact (object)
++ name: `王小明` (string, required) - maxLength: 100
++ sfid: `0031x0000AAAAAAAAA` (string, optional) - length: 18；與 `externalCid`  擇一必填；都給予時以本欄位優先
++ externalCid: `EXT-0001` (string, optional) - maxLength: 60；與 `sfid` 擇一必填 
++ birthday: `1990-05-21` (string, optional) - length: 10（YYYY-MM-DD）
++ gender: `M` (string, optional) - maxLength: 1 (M,F,X) 
++ phone: `0225458882` (string, optional) - maxLength: 20
++ countryCode: `886` (string, optional) - maxLength: 4
++ mobilePhone: `09XXXXXXX` (string, optional) - maxLength: 20
++ email: `a@b.com` (string, optional) - maxLength: 255
++ country: `台灣` (string, optional) - maxLength: 50
++ zipCode: `110` (string, optional) - maxLength: 6
++ city: `臺北市` (string, optional) - maxLength: 50
++ district: `信義區` (string, optional) - maxLength: 50
++ address: `松高路1號` (string, optional) - maxLength: 200 
+
+## UpdContact (object)
++ name: `王小明` (string, required) - maxLength: 100
++ sfid: `0031x0000AAAAAAAAA` (string, optional) - length: 18；與 `externalCid` `uuid` 擇一必填；都給予時以本欄位優先
++ externalCid: `EXT-0001` (string, optional) - maxLength: 60；與 `sfid` `uuid` 擇一必填
++ uuid: `xxxx-xx-x` (string, optional) - maxLength: 36；與 `sfid` `externalCid` 擇一必填
++ birthday: `1990-05-21` (string, optional) - length: 10（YYYY-MM-DD）
++ gender: `M` (string, optional) - maxLength: 1 (M,F,X) 
++ phone: `0225458882` (string, optional) - maxLength: 20
++ countryCode: `886` (string, optional) - maxLength: 4
++ mobilePhone: `09XXXXXXX` (string, optional) - maxLength: 20
++ email: `a@b.com` (string, optional) - maxLength: 255
++ country: `台灣` (string, optional) - maxLength: 50
++ zipCode: `110` (string, optional) - maxLength: 6
++ city: `臺北市` (string, optional) - maxLength: 50
++ district: `信義區` (string, optional) - maxLength: 50
++ address: `松高路1號` (string, optional) - maxLength: 200 
+
+## BatchContactsCreateRequest (object)
++ data (array[Contact], required) - 批次建立清單
+
+## BatchContactsUpdateRequest (object)
++ data (array[UpdContact], required) - 批次建立清單
+
+## LineUser (object)
++ lineUid: `Ud566a4ef252dc08ccc0b33962e6a5781` (string, required) - length: 33
++ sfCid: `0031x0000AAAAAAAAA` (string, optional) - length: 18
++ externalCid: `EXT-0001` (string, optional) - maxLength: 64
++ nickname: `Sandy` (string, optional) - maxLength: 50  
++ authMobile: `0911xxxxxx` (string, optional) - maxLength: 20
++ authEmail: `test@gmail.com` (string, optional) - maxLength: 255 
++ isChatting: true (boolean, optional) 
++ isBinding: true (boolean, optional)
++ name: `San Su` (string, optional) - maxLength: 100  
++ birthday: `1990-05-21` (string, optional) - length: 10（YYYY-MM-DD）
++ gender: `M` (string, optional) - maxLength: 1 (M,F,X) 
++ phone: `0225458882` (string, optional) - maxLength: 20
++ countryCode: `886` (string, optional) - maxLength: 4
++ mobilePhone: `09XXXXXXX` (string, optional) - maxLength: 20
++ email: `a@b.com` (string, optional) - maxLength: 255
++ country: `台灣` (string, optional) - maxLength: 50
++ zipCode: `110` (string, optional) - maxLength: 6
++ city: `臺北市` (string, optional) - maxLength: 50
++ district: `信義區` (string, optional) - maxLength: 50
++ address: `松高路1號` (string, optional) - maxLength: 200
