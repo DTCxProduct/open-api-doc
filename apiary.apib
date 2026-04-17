@@ -705,6 +705,384 @@ signature = base64.b64encode(hash)
         }
         
 
+## 遊戲資格名單 [/openapi/v1/games/{gameId}/eligible-users]
+
++ Parameters
+    + gameId: `123` (number, required) - 遊戲 ID
+
+### 新增/更新遊戲資格名單 [PUT]
+
+批量新增或更新遊戲資格名單。每次最多 500 筆。
+
+識別方式（擇一必填）：
+- `contactUuid`：C360+ 聯絡人 UUID
+- `sfCid`：Salesforce Contact ID
+- `externalCid`：外部系統 Contact ID
+
+`totalPlayCount` >= 0，若更新時新值 < 該用戶已遊玩次數，該筆將記入失敗清單。
+
++ Request (application/json)
+    + Headers
+        Authorization: Bearer {Access Token}
+
+    + Attributes (array)
+        + (object)
+            + contactUuid: (string, optional) - C360+ 聯絡人 UUID
+            + sfCid: (string, optional) - Salesforce Contact ID
+            + externalCid: (string, optional) - 外部系統 Contact ID
+            + totalPlayCount: (number, required) - 總可遊玩次數（>= 0）
+
+    + Body
+        [
+            {
+                "contactUuid": "550e8400-e29b-41d4-a716-446655440001",
+                "totalPlayCount": 5
+            },
+            {
+                "sfCid": "003Dn00000ABC123",
+                "totalPlayCount": 3
+            },
+            {
+                "externalCid": "EXT-USER-2026-001",
+                "totalPlayCount": 10
+            }
+        ]
+
++ Response 200 (application/json)
+
+    全部成功
+
+    + Attributes
+        + successCount: (number) - 成功筆數
+        + failedCount: (number) - 失敗筆數
+        + failedRecords: (array) - 失敗清單
+            + (object)
+                + input: (object) - 原始輸入
+                + errorCode: (string) - 錯誤代碼
+                + errorMessage: (string) - 錯誤訊息
+
+    + Body
+        {
+            "successCount": 3,
+            "failedCount": 0,
+            "failedRecords": []
+        }
+
++ Response 200 (application/json)
+
+    部分失敗（整批請求仍回 200，由 `failedRecords` 指出個別失敗筆數）
+
+    + Body
+        {
+            "successCount": 1,
+            "failedCount": 2,
+            "failedRecords": [
+                {
+                    "input": {
+                        "sfCid": "003Dn00000INVALID",
+                        "totalPlayCount": 3
+                    },
+                    "errorCode": "USER_NOT_FOUND",
+                    "errorMessage": "找不到對應的聯絡人"
+                },
+                {
+                    "input": {
+                        "externalCid": "EXT-USER-2026-001",
+                        "totalPlayCount": 2
+                    },
+                    "errorCode": "PLAY_COUNT_BELOW_PLAYED",
+                    "errorMessage": "totalPlayCount (2) 低於已遊玩次數 (4)"
+                }
+            ]
+        }
+
++ Response 400 (application/json)
+
+    遊戲非 external 模式（`eligibilitySource` 不是 external）
+
+    + Body
+        {
+            "errorCode": "INVALID_ELIGIBILITY_SOURCE",
+            "errorMessage": "此遊戲的 eligibilitySource 不是 external，不支援外部名單操作"
+        }
+
++ Response 400 (application/json)
+
+    超過批量上限（單次最多 500 筆）
+
+    + Body
+        {
+            "errorCode": "BATCH_LIMIT_EXCEEDED",
+            "errorMessage": "批量上限為 500 筆，收到 501 筆"
+        }
+
++ Response 404 (application/json)
+
+    遊戲不存在
+
+    + Body
+        {
+            "errorCode": "GAME_NOT_FOUND",
+            "errorMessage": "遊戲不存在"
+        }
+
+
+## 遊玩紀錄 [/openapi/v1/games/{gameId}/play-records{?pageSize,cursor,startDate,endDate,contactUuid}]
+
++ Parameters
+    + gameId: `123` (number, required) - 遊戲 ID
+    + pageSize: `20` (number, optional) - 每頁筆數（預設 20，上限 100）
+    + cursor: `eyJpZCI6NjkxNSwic2FsdCI6IlZjWXZ1Qy10MFhnT0x5NFFraWhpS1EifQ==` (string, optional) - 分頁游標，首次查詢免帶；response 的 `next` 為下一頁游標
+    + startDate: `2026-04-01T00:00` (string, optional) - 抽獎時間範圍起點
+    + endDate: `2026-04-15T23:59` (string, optional) - 抽獎時間範圍終點
+    + contactUuid: `550e8400-e29b-41d4-a716-446655440001` (string, optional) - 篩選特定聯絡人的遊玩紀錄
+
+### 取得遊玩紀錄 [GET]
+
+依條件分頁查詢遊戲的遊玩紀錄。使用 cursor 翻頁，`next` 為空字串代表已到最後一頁。
+
++ Request
+    + Headers
+        Authorization: Bearer {Access Token}
+
++ Response 200 (application/json)
+
+    首頁（有下一頁）
+
+    + Attributes
+        + records: (array)
+            + (object)
+                + recordId: (string) - 遊玩紀錄 ID
+                + gameId: (number) - 遊戲 ID
+                + gameName: (string) - 遊戲名稱
+                + contactName: (string) - 聯絡人姓名
+                + contactUuid: (string) - C360+ 聯絡人 UUID
+                + lineUid: (string) - LINE 用戶 ID
+                + externalCid: (string) - 外部系統 Contact ID
+                + sfCid: (string) - Salesforce Contact ID
+                + memberId: (string) - 會員 ID
+                + verificationCode: (string) - 核銷驗證碼
+                + drawTime: (string) - 抽獎時間（ISO 8601）
+                + isWinner: (boolean) - 是否中獎
+                + prizeName: (string) - 獎項名稱
+                + ticketCode: (string) - 票券序號
+                + ticketCodeId: (string) - 票券內碼
+                + ticketName: (string) - 票券名稱
+                + claimStatus: (string) - 領取狀態（claimed / unclaimed / 空字串）
+                + claimTime: (string, nullable) - 領取時間（ISO 8601）
+                + usageStatus: (string) - 使用狀態（used / unused / 空字串）
+                + usageTime: (string, nullable) - 使用時間（ISO 8601）
+        + next: (string) - 下一頁游標，空字串代表已是最後一頁
+        + pageSize: (number) - 每頁筆數
+
+    + Body
+        {
+            "records": [
+                {
+                    "recordId": "rec-a1b2c3d4",
+                    "gameId": 123,
+                    "gameName": "母親節感恩抽獎",
+                    "contactName": "王小明",
+                    "contactUuid": "550e8400-e29b-41d4-a716-446655440001",
+                    "lineUid": "U1234567890abcdef1234567890abcdef",
+                    "externalCid": "EXT-USER-2026-001",
+                    "sfCid": "003Dn00000ABC123",
+                    "memberId": "M20260001",
+                    "verificationCode": "A3F7",
+                    "drawTime": "2026-04-10T14:30:00+08:00",
+                    "isWinner": true,
+                    "prizeName": "頭獎 iPhone 16",
+                    "ticketCode": "TKT-20260410-001",
+                    "ticketCodeId": "tc-x9y8z7w6",
+                    "ticketName": "iPhone 16 兌換券",
+                    "claimStatus": "claimed",
+                    "claimTime": "2026-04-10T14:31:00+08:00",
+                    "usageStatus": "unused",
+                    "usageTime": null
+                },
+                {
+                    "recordId": "rec-e5f6g7h8",
+                    "gameId": 123,
+                    "gameName": "母親節感恩抽獎",
+                    "contactName": "李小華",
+                    "contactUuid": "550e8400-e29b-41d4-a716-446655440002",
+                    "lineUid": "Uabcdef1234567890abcdef1234567890",
+                    "externalCid": "",
+                    "sfCid": "003Dn00000DEF456",
+                    "memberId": "M20260002",
+                    "verificationCode": "B8K2",
+                    "drawTime": "2026-04-10T15:00:00+08:00",
+                    "isWinner": false,
+                    "prizeName": "",
+                    "ticketCode": "-",
+                    "ticketCodeId": "",
+                    "ticketName": "",
+                    "claimStatus": "",
+                    "claimTime": null,
+                    "usageStatus": "",
+                    "usageTime": null
+                }
+            ],
+            "next": "eyJpZCI6MTAyMCwic2FsdCI6ImFiY2RlZjEyMzQ1NiJ9",
+            "pageSize": 20
+        }
+
++ Response 200 (application/json)
+
+    最後一頁（`next` 為空字串）
+
+    + Body
+        {
+            "records": [
+                {
+                    "recordId": "rec-m3n4o5p6",
+                    "gameId": 123,
+                    "gameName": "母親節感恩抽獎",
+                    "contactName": "張大偉",
+                    "contactUuid": "550e8400-e29b-41d4-a716-446655440003",
+                    "lineUid": "U9876543210fedcba9876543210fedcba",
+                    "externalCid": "EXT-USER-2026-003",
+                    "sfCid": "",
+                    "memberId": "M20260003",
+                    "verificationCode": "C5P9",
+                    "drawTime": "2026-04-11T09:15:00+08:00",
+                    "isWinner": true,
+                    "prizeName": "二獎 星巴克禮券",
+                    "ticketCode": "TKT-20260411-005",
+                    "ticketCodeId": "tc-q1r2s3t4",
+                    "ticketName": "星巴克 500 元禮券",
+                    "claimStatus": "claimed",
+                    "claimTime": "2026-04-11T09:16:00+08:00",
+                    "usageStatus": "used",
+                    "usageTime": "2026-04-12T10:00:00+08:00"
+                }
+            ],
+            "next": "",
+            "pageSize": 20
+        }
+
++ Response 404 (application/json)
+
+    遊戲不存在
+
+    + Body
+        {
+            "errorCode": "GAME_NOT_FOUND",
+            "errorMessage": "遊戲不存在"
+        }
+
+
+## 票券狀態 [/openapi/v1/tickets/status]
+
+### 核銷票券 [PUT]
+
+變更票券狀態。識別方式（擇一必填）：
+- `ticketCodeId`：票券內碼（較精確，避免序號重複問題）
+- `ticketCode`：票券序號（若有多筆重複，會回 `TICKET_CODE_DUPLICATE`）
+
+`status` 可填：
+- `used`：核銷為已使用
+- `voided`：設為已失效（此狀態僅可透過 Open API 設定）
+
++ Request (application/json)
+    + Headers
+        Authorization: Bearer {Access Token}
+
+    + Attributes
+        + ticketCodeId: (string, optional) - 票券內碼（與 `ticketCode` 擇一必填）
+        + ticketCode: (string, optional) - 票券序號（與 `ticketCodeId` 擇一必填）
+        + status: (enum[string], required) - 目標狀態
+            + Members
+                + `used`
+                + `voided`
+
+    + Body
+        {
+            "ticketCodeId": "tc-x9y8z7w6",
+            "status": "used"
+        }
+
++ Response 200 (application/json)
+
+    成功設為已使用
+
+    + Attributes
+        + ticketCodeId: (string) - 票券內碼
+        + ticketCode: (string) - 票券序號
+        + status: (string) - 當前狀態
+        + message: (string) - 訊息
+
+    + Body
+        {
+            "ticketCodeId": "tc-x9y8z7w6",
+            "ticketCode": "TKT-20260410-001",
+            "status": "used",
+            "message": "票券狀態更新成功"
+        }
+
++ Response 200 (application/json)
+
+    成功設為已失效
+
+    + Body
+        {
+            "ticketCodeId": "tc-x9y8z7w6",
+            "ticketCode": "TKT-20260410-001",
+            "status": "voided",
+            "message": "票券狀態更新成功"
+        }
+
++ Response 400 (application/json)
+
+    未提供識別參數（`ticketCodeId` 和 `ticketCode` 皆缺）
+
+    + Body
+        {
+            "errorCode": "INVALID_PARAMS",
+            "errorMessage": "ticketCodeId 和 ticketCode 至少需提供一個"
+        }
+
++ Response 409 (application/json)
+
+    票券已使用，無法變更狀態
+
+    + Body
+        {
+            "errorCode": "TICKET_ALREADY_USED",
+            "errorMessage": "票券已使用，無法變更狀態"
+        }
+
++ Response 409 (application/json)
+
+    票券已失效，無法變更狀態
+
+    + Body
+        {
+            "errorCode": "TICKET_VOIDED",
+            "errorMessage": "票券已失效，無法變更狀態"
+        }
+
++ Response 409 (application/json)
+
+    票券已過期，無法變更狀態
+
+    + Body
+        {
+            "errorCode": "TICKET_EXPIRED",
+            "errorMessage": "票券已過期，無法變更狀態"
+        }
+
++ Response 409 (application/json)
+
+    票券序號重複（同一 `ticketCode` 對應多筆記錄，請改用 `ticketCodeId`）
+
+    + Body
+        {
+            "errorCode": "TICKET_CODE_DUPLICATE",
+            "errorMessage": "票券序號有多筆記錄，請改用 ticketCodeId 指定"
+        }
+
+
 ## Webhook [/webhook-event]
 
 您可以使用 Webhook 來取得有關用戶中特定事件的通知，並進行進一步處理，而不必定期進行 API 輪詢以檢查其狀態與更新。
